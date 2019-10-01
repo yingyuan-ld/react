@@ -13,7 +13,6 @@ let React;
 let ReactDOM;
 let ReactDOMServer;
 let Scheduler;
-let act;
 
 // These tests rely both on ReactDOMServer and ReactDOM.
 // If a test only needs ReactDOMServer, put it in ReactServerRendering-test instead.
@@ -24,7 +23,6 @@ describe('ReactDOMServerHydration', () => {
     ReactDOM = require('react-dom');
     ReactDOMServer = require('react-dom/server');
     Scheduler = require('scheduler');
-    act = require('react-dom/test-utils').act;
   });
 
   it('should have the correct mounting behavior (old hydrate API)', () => {
@@ -502,6 +500,21 @@ describe('ReactDOMServerHydration', () => {
     expect(element.textContent).toBe('Hello world');
   });
 
+  it('does not re-enter hydration after committing the first one', () => {
+    let finalHTML = ReactDOMServer.renderToString(<div />);
+    let container = document.createElement('div');
+    container.innerHTML = finalHTML;
+    let root = ReactDOM.unstable_createRoot(container, {hydrate: true});
+    root.render(<div />);
+    Scheduler.unstable_flushAll();
+    root.render(null);
+    Scheduler.unstable_flushAll();
+    // This should not reenter hydration state and therefore not trigger hydration
+    // warnings.
+    root.render(<div />);
+    Scheduler.unstable_flushAll();
+  });
+
   it('does not invoke an event on a concurrent hydrating node until it commits', () => {
     function Sibling({text}) {
       Scheduler.unstable_yieldValue('Sibling');
@@ -555,6 +568,13 @@ describe('ReactDOMServerHydration', () => {
     // Hydrate asynchronously.
     let root = ReactDOM.unstable_createRoot(container, {hydrate: true});
     root.render(<App />);
+
+    // We haven't started hydrating yet.
+    a.click();
+    // Clicking should not invoke the event yet because we haven't committed
+    // the hydration yet.
+    expect(clicks).toBe(0);
+
     // Flush part way through the render.
     if (__DEV__) {
       // In DEV effects gets double invoked.
@@ -572,15 +592,15 @@ describe('ReactDOMServerHydration', () => {
     expect(clicks).toBe(0);
 
     // Finish the rest of the hydration.
-    expect(Scheduler).toFlushAndYield(['Sibling2']);
+    if (__DEV__) {
+      // In DEV effects gets double invoked.
+      expect(Scheduler).toFlushAndYield(['Sibling2', 'Button', 'Button']);
+    } else {
+      expect(Scheduler).toFlushAndYield(['Sibling2', 'Button']);
+    }
 
-    // TODO: With selective hydration the event should've been replayed
-    // but for now we'll have to issue it again.
-    act(() => {
-      a.click();
-    });
-
-    expect(clicks).toBe(1);
+    // We should have picked up both events now.
+    expect(clicks).toBe(2);
 
     expect(container.textContent).toBe('Sibling');
 
@@ -634,14 +654,20 @@ describe('ReactDOMServerHydration', () => {
     Scheduler.unstable_flushAll();
 
     // We're now full hydrated.
-    // TODO: With selective hydration the event should've been replayed
-    // but for now we'll have to issue it again.
-    act(() => {
-      a.click();
-    });
 
     expect(clicks).toBe(1);
 
     document.body.removeChild(parentContainer);
+  });
+
+  it('regression test: Suspense + hydration in legacy mode ', () => {
+    const element = document.createElement('div');
+    element.innerHTML = '<div>Hello World</div>';
+    ReactDOM.hydrate(
+      <React.Suspense>
+        <div>Hello World</div>
+      </React.Suspense>,
+      element,
+    );
   });
 });

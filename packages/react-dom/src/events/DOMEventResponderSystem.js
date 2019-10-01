@@ -12,7 +12,7 @@ import {
   PASSIVE_NOT_SUPPORTED,
 } from 'legacy-events/EventSystemFlags';
 import type {AnyNativeEvent} from 'legacy-events/PluginModuleType';
-import {HostComponent, ScopeComponent} from 'shared/ReactWorkTags';
+import {HostComponent, ScopeComponent, HostPortal} from 'shared/ReactWorkTags';
 import type {EventPriority} from 'shared/ReactTypes';
 import type {
   ReactDOMEventResponder,
@@ -39,7 +39,6 @@ import {
   UserBlockingEvent,
   DiscreteEvent,
 } from 'shared/ReactTypes';
-import {enableUserBlockingEvents} from 'shared/ReactFeatureFlags';
 
 // Intentionally not named imports because Rollup would use dynamic dispatch for
 // CommonJS interop named imports.
@@ -104,13 +103,9 @@ const eventResponderContext: ReactDOMResponderContext = {
         break;
       }
       case UserBlockingEvent: {
-        if (enableUserBlockingEvents) {
-          runWithPriority(UserBlockingPriority, () =>
-            executeUserEventHandler(eventListener, eventValue),
-          );
-        } else {
-          executeUserEventHandler(eventListener, eventValue);
-        }
+        runWithPriority(UserBlockingPriority, () =>
+          executeUserEventHandler(eventListener, eventValue),
+        );
         break;
       }
       case ContinuousEvent: {
@@ -181,8 +176,7 @@ const eventResponderContext: ReactDOMResponderContext = {
   },
   addRootEventTypes(rootEventTypes: Array<string>): void {
     validateResponderContext();
-    const activeDocument = getActiveDocument();
-    listenToResponderEventTypesImpl(rootEventTypes, activeDocument);
+    listenToResponderEventTypesImpl(rootEventTypes, currentDocument);
     for (let i = 0; i < rootEventTypes.length; i++) {
       const rootEventType = rootEventTypes[i];
       const eventResponderInstance = ((currentInstance: any): ReactDOMEventResponderInstance);
@@ -304,16 +298,6 @@ function validateEventValue(eventValue: any): void {
         );
       }
     };
-    eventValue.preventDefault = () => {
-      if (__DEV__) {
-        showWarning('preventDefault()');
-      }
-    };
-    eventValue.stopPropagation = () => {
-      if (__DEV__) {
-        showWarning('stopPropagation()');
-      }
-    };
     eventValue.isDefaultPrevented = () => {
       if (__DEV__) {
         showWarning('isDefaultPrevented()');
@@ -361,6 +345,8 @@ function processTimers(
   delay: number,
 ): void {
   const timersArr = Array.from(timers.values());
+  const previousInstance = currentInstance;
+  const previousTimers = currentTimers;
   try {
     batchedEventUpdates(() => {
       for (let i = 0; i < timersArr.length; i++) {
@@ -375,8 +361,8 @@ function processTimers(
       }
     });
   } finally {
-    currentTimers = null;
-    currentInstance = null;
+    currentTimers = previousTimers;
+    currentInstance = previousInstance;
     currentTimeStamp = 0;
   }
 }
@@ -460,9 +446,12 @@ function traverseAndHandleEventResponderInstances(
     isPassiveSupported,
   );
   let node = targetFiber;
+  let insidePortal = false;
   while (node !== null) {
     const {dependencies, tag} = node;
-    if (
+    if (tag === HostPortal) {
+      insidePortal = true;
+    } else if (
       (tag === HostComponent || tag === ScopeComponent) &&
       dependencies !== null
     ) {
@@ -474,7 +463,8 @@ function traverseAndHandleEventResponderInstances(
           const {props, responder, state} = responderInstance;
           if (
             !visitedResponders.has(responder) &&
-            validateResponderTargetEventTypes(eventType, responder)
+            validateResponderTargetEventTypes(eventType, responder) &&
+            (!insidePortal || responder.targetPortalPropagation)
           ) {
             visitedResponders.add(responder);
             const onEvent = responder.onEvent;
@@ -519,14 +509,16 @@ export function mountEventResponder(
 ) {
   const onMount = responder.onMount;
   if (onMount !== null) {
+    const previousInstance = currentInstance;
+    const previousTimers = currentTimers;
     currentInstance = responderInstance;
     try {
       batchedEventUpdates(() => {
         onMount(eventResponderContext, props, state);
       });
     } finally {
-      currentInstance = null;
-      currentTimers = null;
+      currentInstance = previousInstance;
+      currentTimers = previousTimers;
     }
   }
 }
@@ -538,14 +530,16 @@ export function unmountEventResponder(
   const onUnmount = responder.onUnmount;
   if (onUnmount !== null) {
     let {props, state} = responderInstance;
+    const previousInstance = currentInstance;
+    const previousTimers = currentTimers;
     currentInstance = responderInstance;
     try {
       batchedEventUpdates(() => {
         onUnmount(eventResponderContext, props, state);
       });
     } finally {
-      currentInstance = null;
-      currentTimers = null;
+      currentInstance = previousInstance;
+      currentTimers = previousTimers;
     }
   }
   const rootEventTypesSet = responderInstance.rootEventTypes;

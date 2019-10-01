@@ -662,7 +662,12 @@ function completeWork(
       if (current === null || current.child === null) {
         // If we hydrated, pop so that we can delete any remaining children
         // that weren't hydrated.
-        popHydrationState(workInProgress);
+        let wasHydrated = popHydrationState(workInProgress);
+        if (wasHydrated) {
+          // If we hydrated, then we'll need to schedule an update for
+          // the commit side-effects on the root.
+          markUpdate(workInProgress);
+        }
       }
       updateHostContainer(workInProgress);
       break;
@@ -1280,8 +1285,9 @@ function completeWork(
     default:
       invariant(
         false,
-        'Unknown unit of work tag. This error is likely caused by a bug in ' +
+        'Unknown unit of work tag (%s). This error is likely caused by a bug in ' +
           'React. Please file an issue.',
+        workInProgress.tag,
       );
   }
 

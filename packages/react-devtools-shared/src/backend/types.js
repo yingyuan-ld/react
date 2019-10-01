@@ -81,7 +81,10 @@ export type ReactRenderer = {
   // Enables DevTools to append owners-only component stack to error messages.
   getCurrentFiber?: () => Fiber | null,
 
-  // <= 15
+  // Uniquely identifies React DOM v15.
+  ComponentTree?: any,
+
+  // Present for React DOM v12 (possibly earlier) through v15.
   Mount?: any,
 };
 
@@ -162,6 +165,9 @@ export type InspectedElement = {|
 
   // Can view component source location.
   canViewSource: boolean,
+
+  // Does the component have legacy context attached to it.
+  hasLegacyContext: boolean,
 
   // Inspectable properties.
   context: Object | null,

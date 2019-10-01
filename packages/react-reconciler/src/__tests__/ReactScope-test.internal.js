@@ -9,7 +9,7 @@
 
 'use strict';
 
-import {createEventTarget} from 'react-events/src/dom/testing-library';
+import {createEventTarget} from 'react-interactions/events/src/dom/testing-library';
 
 let React;
 let ReactFeatureFlags;
@@ -67,6 +67,8 @@ describe('ReactScope', () => {
       ReactDOM.render(<Test toggle={false} />, container);
       nodes = scopeRef.current.getScopedNodes();
       expect(nodes).toEqual([aRef.current, divRef.current, spanRef.current]);
+      ReactDOM.render(null, container);
+      expect(scopeRef.current).toBe(null);
     });
 
     it('mixed getParent() and getScopedNodes() works as intended', () => {
@@ -202,7 +204,8 @@ describe('ReactScope', () => {
       let onKeyDown = jest.fn();
       const TestScope = React.unstable_createScope((type, props) => true);
       const ref = React.createRef();
-      const useKeyboard = require('react-events/keyboard').useKeyboard;
+      const useKeyboard = require('react-interactions/events/keyboard')
+        .useKeyboard;
       let Component = () => {
         const listener = useKeyboard({
           onKeyDown,
@@ -218,9 +221,6 @@ describe('ReactScope', () => {
       let target = createEventTarget(ref.current);
       target.keydown({key: 'Q'});
       expect(onKeyDown).toHaveBeenCalledTimes(1);
-      expect(onKeyDown).toHaveBeenCalledWith(
-        expect.objectContaining({key: 'Q', type: 'keydown'}),
-      );
 
       onKeyDown = jest.fn();
       Component = () => {
@@ -240,9 +240,6 @@ describe('ReactScope', () => {
       target = createEventTarget(ref.current);
       target.keydown({key: 'Q'});
       expect(onKeyDown).toHaveBeenCalledTimes(1);
-      expect(onKeyDown).toHaveBeenCalledWith(
-        expect.objectContaining({key: 'Q', type: 'keydown'}),
-      );
     });
   });
 
